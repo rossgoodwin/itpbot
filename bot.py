@@ -179,19 +179,19 @@ class Bot(object):
                 print firstNoun.string.replace('_', ' ')
                 s = sentiment(text)[0]
                 sentences = sorted(
-                    pf_sentences(abs(s*1000+1), firstNoun.string.replace('_', ' ')),
+                    pf_sentences(abs(s*1000+3), firstNoun.string.replace('_', ' ')),
                     key = lambda x: sentiment(x)[0]
                 )
 
                 if s > 0:
-                    print s * 2500 + 1
+                    # print s * 2500 + 1
                     self.send_msg(
-                        sentences[-1]
+                        ' '.join(sentences[-3:])
                     )
                 else:
-                    print s * 2500 - 1
+                    # print s * 2500 - 1
                     self.send_msg(
-                        sentences[0]
+                        ' '.join(sentences[:3])
                     )
             else:
                 snarkTemp = Template(rc(self.snarklist))
