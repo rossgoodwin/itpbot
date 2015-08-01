@@ -16,3 +16,6 @@ Search Giphy:
 
 	.gif <query>
 
+Hunter S. Thompson quotes:
+
+	.hst <query>
