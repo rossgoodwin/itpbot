@@ -14,6 +14,7 @@ from apiclient.errors import HttpError
 # Context-free grammar
 from pattern.en import sentiment
 from pattern.en import parsetree
+from pattern.vector import stem, PORTER, LEMMA
 from pattern.search import match
 from grammar_gen import make_sentence, make_polar
 
@@ -146,13 +147,23 @@ class Bot(object):
         words = re.findall(r"\b[\w]+\b", text.lower())
         tokens = text.lower().split()
 
+        try:
+            words.remove(self.nick)
+        except:
+            pass
+
+        try:
+            words.remove('hst')
+        except:
+            pass
+
+        try:
+            tree = parsetree(' '.join(words))
+            firstNoun = match('NN|NNS|NNP|NNPS', tree)
+        except:
+            firstNoun = None
+
         if '@'+self.nick in tokens:
-            try:
-                words.remove('itpbot')
-                tree = parsetree(' '.join(words))
-                firstNoun = match('NN|NNS|NNP|NNPS', tree)
-            except:
-                firstNoun = None
 
             if set(words) & set(['help', 'commands']):
                 commandsTemp = Template(self.commands)
@@ -224,6 +235,35 @@ class Bot(object):
                 self.send_msg("%s: %s | %s | https://www.youtube.com/watch?v=%s" % (usernick, title, desc, vidId))
             except:
                 self.send_msg("%s: I'm sorry, but something went wrong!" % usernick)
+
+        elif tokens[0] == '.hst':
+            if firstNoun is not None:
+                lookupFile = open("hst_lookup.json", 'r')
+                lookup = json.load( lookupFile )
+                lookupFile.close()
+
+                try:
+                    nounStem = stem(firstNoun, stemmer=PORTER)
+                    print nounStem
+                    # switch to descending
+                    idHash = rc(lookup[nounStem])
+                    print idHash
+                except KeyError:
+                    self.send_msg("%s: Can't say I know it." % usernick)
+                else:
+                    bookFile = open("hst_text.json", 'r')
+                    books = json.load( bookFile )
+                    bookFile.close()
+
+                    text = books[idHash].encode('ascii', 'ignore')
+                    print text
+
+                    self.send_msg("%s: %s"%(usernick,text))
+
+            else:
+                self.send_msg("%s: Nothing to say about that." % usernick)
+
+
 
         if "ross" in words:
             self.send_msg("%s: I hope you're not speaking ill of my creator." % usernick)
