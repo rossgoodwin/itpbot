@@ -1,0 +1,1 @@
+Well hello, $usernick! I'm $botnick, and I'm here to do your bidding. Type my name followed by one of the commands listed at: http://rossgoodwin.com/$botnick

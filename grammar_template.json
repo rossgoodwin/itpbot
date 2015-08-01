@@ -1,0 +1,8 @@
+{
+	"Sentence": ["NounPhrase VerbPhrase .", "UH NounPhrase VerbPhrase .", "NounPhrase VerbPhrase , CC NounPhrase VerbPhrase ."],
+	"NounPhrase": ["NP", "NP that VerbPhrase", "SingularDet ADJP NN", "PluralDet ADJP NNS", "NP PNP"],
+	"VerbPhrase": ["VP_trans NounPhrase", "VP_intrans", "VP_intrans PNP"],
+	"SingularDet": ["the", "that", "this", "NamePos"],
+	"PluralDet": ["these", "those", "NamePos"],
+	"UH": ["RB ,", "IN", "CC"]
+}
