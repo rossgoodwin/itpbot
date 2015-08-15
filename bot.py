@@ -1,10 +1,13 @@
 import socket
 import re
+import sys
 import json
 import requests
 from random import choice as rc
 from string import Template
+from datetime import datetime
 from time import sleep
+from collections import defaultdict
 
 # YouTube API Stuff
 import yt_key
@@ -96,6 +99,12 @@ class Bot(object):
         self.serv = serv
         self.chan = chan
 
+        pwdFile = open('pwd.txt', 'r')
+        pwdText = pwdFile.read().strip()
+        pwdFile.close()
+
+        self.pwd = pwdText
+
         commandFile = open('commands.txt', 'r')
         commandText = commandFile.read()
         commandFile.close()
@@ -108,6 +117,18 @@ class Bot(object):
 
         self.snarklist = snarkText.split('\n')
 
+        tellsFile = open('tells_dict.json', 'r')
+        tellsDict = json.load(tellsFile)
+        tellsFile.close()
+
+        self.tells_dict = tellsDict
+
+        seenFile = open('seen_dict.json', 'r')
+        seenDict = json.load(seenFile)
+        seenFile.close()
+
+        self.seen_dict = seenDict
+
     def activate(self):
         # Here we connect to the server using the port 6667
         self.ircsock.connect((self.serv, 6667)) 
@@ -118,6 +139,9 @@ class Bot(object):
 
         # Join #itp
         self.join_channel()
+
+        # Identify
+        self.send_msg("IDENTIFY %s" % self.pwd, channel="NickServ")
 
         # Receive data and respond
         self.communicate()
@@ -137,15 +161,33 @@ class Bot(object):
                 usernick = ircmsg.split('!')[0][1:] # User's Nick
                 vals = ircmsg.split(' PRIVMSG ')[-1].split(' :')
                 channel, msgtext = vals[:2]
-                if channel == "#itp":
-                    self.parse_message(msgtext, usernick)
+
+                timestamp = datetime.now().strftime('%A, %B %d, %Y at %I:%M:%S %p GMT')
+
+                if channel == self.chan:
+                    self.seen_dict[usernick] = (timestamp, msgtext)
+                    with open('seen_dict.json', 'w') as outfile:
+                        json.dump(self.seen_dict, outfile)
+
+                # This Try/Except Is A Nuclear Blast Shield
+                try:
+                    self.parse_message(msgtext, usernick, channel)
+                except:
+                    print sys.exc_info()
 
             if 'PING :' in ircmsg:
                 self.ping()
 
-    def parse_message(self, text, usernick):
+    def parse_message(self, text, usernick, channel):
+        if channel != self.chan:
+            userOrFalse = usernick
+        else:
+            userOrFalse = False
+
         words = re.findall(r"\b[\w]+\b", text.lower())
         tokens = text.lower().split()
+
+        original_words = words[:]
 
         try:
             words.remove(self.nick)
@@ -163,12 +205,14 @@ class Bot(object):
         except:
             firstNoun = None
 
-        if '@'+self.nick in tokens:
+        # print original_words
+        if self.nick in original_words:
 
             if set(words) & set(['help', 'commands']):
                 commandsTemp = Template(self.commands)
                 self.send_msg(
-                    commandsTemp.substitute(usernick=usernick, botnick=self.nick)
+                    commandsTemp.substitute(usernick=usernick, botnick=self.nick),
+                    channel=userOrFalse
                 )
             elif '?' in text or (set(words) & set(['who', 'where', 'when', 'what', 'why', 'how'])):
                 fileObj = open('weird_grammar.json', 'r')
@@ -178,12 +222,14 @@ class Bot(object):
                 if s > 0:
                     print s * 2500 + 1
                     self.send_msg(
-                        make_polar(jsonObj, int(s * 2500 + 1))
+                        make_polar(jsonObj, int(s * 2500 + 1)),
+                        channel=userOrFalse
                     )
                 else:
                     print s * 2500 - 1
                     self.send_msg(
-                        make_polar(jsonObj, int(s * -2500 - 1), sent=0)
+                        make_polar(jsonObj, int(s * -2500 - 1), sent=0),
+                        channel=userOrFalse
                     )
 
             elif firstNoun is not None:
@@ -197,80 +243,148 @@ class Bot(object):
                 if s > 0:
                     # print s * 2500 + 1
                     self.send_msg(
-                        ' '.join(sentences[-3:])
+                        ' '.join(sentences[-3:]),
+                        channel=userOrFalse
                     )
                 else:
                     # print s * 2500 - 1
                     self.send_msg(
-                        ' '.join(sentences[:3])
+                        ' '.join(sentences[:3]),
+                        channel=userOrFalse
                     )
             else:
                 snarkTemp = Template(rc(self.snarklist))
                 self.send_msg(
-                    snarkTemp.substitute(usernick=usernick, botnick=self.nick)
+                    snarkTemp.substitute(usernick=usernick, botnick=self.nick),
+                    channel=userOrFalse
                 )
 
-        if tokens[0] == '.gif':
+        if tokens[0] == '.seen':
+            tgt_user = tokens[1]
+            if tgt_user in self.seen_dict:
+                last_time, last_msg = self.seen_dict[tgt_user]
+                self.send_msg(
+                    "%s: %s last seen on %s saying: %s" % (usernick, tgt_user, last_time, last_msg),
+                    channel=userOrFalse
+                )
+            else:
+                self.send_msg(
+                    "%s: I haven't seen %s." % (usernick, tgt_user),
+                    channel=userOrFalse
+                )
+
+        elif tokens[0] == '.tell':
+            tgt_user = tokens[1]
+            if not tgt_user in self.tells_dict:
+                self.tells_dict[tgt_user] = []
+            self.tells_dict[tgt_user].append((usernick, ' '.join(tokens[2:])))
+            self.send_msg(
+                "%s: Ok, I'll tell %s that for you." % (usernick, tgt_user),
+                channel=userOrFalse
+            )
+            with open('tells_dict.json', 'w') as outfile:
+                json.dump(self.tells_dict, outfile)
+
+        elif tokens[0] == '.showtells':
+            if not usernick in self.tells_dict or not self.tells_dict[usernick]:
+                self.send_msg("%s: I have nothing for you." % usernick, channel=usernick)
+            else:
+                while self.tells_dict[usernick]:
+                    src_user, tell_msg = self.tells_dict[usernick].pop()
+                    self.send_msg("%s said: %s" % (src_user, tell_msg), channel=usernick)
+            with open('tells_dict.json', 'w') as outfile:
+                json.dump(self.tells_dict, outfile)
+
+        elif tokens[0] == '.gif':
             gif_url = get_gif(tokens[1:])
-            self.send_msg("%s: %s" % (usernick, gif_url))
+            self.send_msg("%s: %s" % (usernick, gif_url), channel=userOrFalse)
 
         elif tokens[0] == '.wiki':
             try:
                 wiki_url, wiki_text = get_wiki_article(tokens[1:])
             except:
-                self.send_msg("%s: I'm sorry, but something went wrong!" % usernick)
+                self.send_msg(
+                    "%s: I'm sorry, but something went wrong!" % usernick,
+                    channel=userOrFalse
+                )
             else:
                 if wiki_text:
                     safe_wiki_text = ''.join(list(wiki_text)[:300]).replace('\n', ' ') + '...'
                     safe_wiki_text = safe_wiki_text.encode('ascii', 'ignore')
-                    self.send_msg("%s: %s | %s" % (usernick, wiki_url, safe_wiki_text))
+                    self.send_msg(
+                        "%s: %s | %s" % (usernick, wiki_url, safe_wiki_text),
+                        channel=userOrFalse
+                    )
                 else:
-                    self.send_msg("%s: I'm sorry, but something went wrong!" % usernick)
+                    self.send_msg(
+                        "%s: I'm sorry, but something went wrong!" % usernick,
+                        channel=userOrFalse
+                    )
                     
         elif tokens[0] == '.yt':
             try:
                 result = youtube_search(tokens[1:])
                 result = map(lambda x: x.encode('ascii', 'ignore'), result)
                 title, desc, vidId = result
-                self.send_msg("%s: %s | %s | https://www.youtube.com/watch?v=%s" % (usernick, title, desc, vidId))
+                self.send_msg(
+                    "%s: %s | %s | https://www.youtube.com/watch?v=%s" % (usernick, title, desc, vidId),
+                    channel=userOrFalse
+                )
             except:
-                self.send_msg("%s: I'm sorry, but something went wrong!" % usernick)
+                self.send_msg(
+                    "%s: I'm sorry, but something went wrong!" % usernick,
+                    channel=userOrFalse
+                )
 
         elif tokens[0] == '.hst':
+            # self.send_msg('/nick drgonzo')
             if firstNoun is not None:
                 lookupFile = open("hst_lookup.json", 'r')
                 lookup = json.load( lookupFile )
                 lookupFile.close()
 
+                nounStem = stem(firstNoun, stemmer=PORTER)
+                idHash = None
+
+                print nounStem
+
                 try:
-                    nounStem = stem(firstNoun, stemmer=PORTER)
-                    print nounStem
                     # switch to descending
                     idHash = rc(lookup[nounStem])
                     print idHash
                 except KeyError:
-                    self.send_msg("%s: Can't say I know it." % usernick)
-                else:
+                    pass
+
+                try:
+                    idHash = rc(lookup[firstNoun])
+                    print idHash
+                except KeyError:
+                    pass
+                
+                if idHash is not None:
                     bookFile = open("hst_text.json", 'r')
                     books = json.load( bookFile )
                     bookFile.close()
 
                     text = books[idHash].encode('ascii', 'ignore')
-                    print text
+                    # print text
 
-                    self.send_msg("%s: %s"%(usernick,text))
+                    self.send_msg("%s: %s"%(usernick,text), channel=userOrFalse)
+
+                else:
+                    self.send_msg("%s: Can't say I know it." % usernick, channel=userOrFalse)
 
             else:
-                self.send_msg("%s: Nothing to say about that." % usernick)
-
+                self.send_msg("%s: Nothing to say about that." % usernick, channel=userOrFalse)
+            # self.send_msg('/nick itpbot')
 
 
         if "ross" in words:
-            self.send_msg("%s: I hope you're not speaking ill of my creator." % usernick)
+            self.send_msg("%s: I hope you're not speaking ill of my creator." % usernick, channel=userOrFalse)
 
         if "itp" in words:
             message = rand_itp_acronym()
-            self.send_msg(message)
+            self.send_msg(message, channel=userOrFalse)
 
 
     def join_channel(self, channel=False):

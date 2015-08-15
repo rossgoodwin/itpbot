@@ -1,3 +1,7 @@
+scippy.py
+pwd.txt
+seen_dict.json
+tells_dict.json
 hst_books.json
 env/
 *.pyc
